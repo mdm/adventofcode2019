@@ -118,95 +118,81 @@ fn main() {
 
     println!("{}", sum_total);
 
-    let mut moons = original_moons.clone();
-    let mut steps = 0 as i64;
-    loop {
-        if steps % 10000000 == 0 {
-            println!("{}", steps);
-        }
-        step_time(&mut moons);
-        steps += 1;
-
-        if moons.iter().all(|moon| moon.velocity.x == 0 && moon.velocity.y == 0 && moon.velocity.z == 0) {
-            println!("{}", steps);
-            break;
-        }
-    }
-    dbg!(&moons);
-    return;
 
     let mut periods = Vec::new();
     let mut firsts = Vec::new();
-    for i in 0..4 {
-        // let mut moons = original_moons.clone();
-        // let mut history = std::collections::HashMap::new();
-        // let mut steps = 0 as i64;
-        // loop {
-        //     history.insert(moons[i].clone(), steps);
+    let mut moons = original_moons.clone();
+    let mut history = std::collections::HashMap::new();
+    let mut steps = 0 as i64;
+    loop {
+        let mut xs = moons.iter().map(|moon| moon.position.x).collect::<Vec<i32>>();
+        xs.extend(moons.iter().map(|moon| moon.velocity.x).collect::<Vec<i32>>());
+        history.insert(xs, steps);
 
-        //     step_time(&mut moons);
+        step_time(&mut moons);
 
-        //     steps += 1;
+        steps += 1;
 
-        //     if let Some(first) = history.get(&moons[i]) {
-        //         periods.push(steps - first);
-        //         firsts.push(first.clone());
-        //         break;
-        //     }
-        // }
-
-        // let mut moons = original_moons.clone();
-        // let mut history = std::collections::HashMap::new();
-        // let mut steps = 0 as i64;
-        // loop {
-        //     history.insert(moons[i].position.clone(), steps);
-
-        //     step_time(&mut moons);
-
-        //     steps += 1;
-
-        //     if let Some(first) = history.get(&moons[i].position) {
-        //         periods.push(steps - first);
-        //         break;
-        //     }
-        // }
-
-        let mut moons = original_moons.clone();
-        let mut history = std::collections::HashMap::new();
-        let mut steps = 0 as i64;
-        loop {
-            history.insert(moons[i].velocity.clone(), steps);
-
-            step_time(&mut moons);
-
-            steps += 1;
-
-            if let Some(first) = history.get(&moons[i].velocity) {
-                periods.push(steps - first);
-                firsts.push(first.clone());
-                break;
-            }
+        let mut xs = moons.iter().map(|moon| moon.position.x).collect::<Vec<i32>>();
+        xs.extend(moons.iter().map(|moon| moon.velocity.x).collect::<Vec<i32>>());
+        // dbg!(&xs);
+        if let Some(first) = history.get(&xs) {
+            periods.push(steps - first);
+            firsts.push(first.clone());
+            break;
         }
     }
 
-    dbg!(&periods);
-    dbg!(&firsts);
+    let mut moons = original_moons.clone();
+    let mut history = std::collections::HashMap::new();
+    let mut steps = 0 as i64;
+    loop {
+        let mut ys = moons.iter().map(|moon| moon.position.y).collect::<Vec<i32>>();
+        ys.extend(moons.iter().map(|moon| moon.velocity.y).collect::<Vec<i32>>());
+        history.insert(ys, steps);
+
+        step_time(&mut moons);
+
+        steps += 1;
+
+        let mut ys = moons.iter().map(|moon| moon.position.y).collect::<Vec<i32>>();
+        ys.extend(moons.iter().map(|moon| moon.velocity.y).collect::<Vec<i32>>());
+        // dbg!(&ys);
+        if let Some(first) = history.get(&ys) {
+            periods.push(steps - first);
+            firsts.push(first.clone());
+            break;
+        }
+    }
+
+    let mut moons = original_moons.clone();
+    let mut history = std::collections::HashMap::new();
+    let mut steps = 0 as i64;
+    loop {
+        let mut zs = moons.iter().map(|moon| moon.position.z).collect::<Vec<i32>>();
+        zs.extend(moons.iter().map(|moon| moon.velocity.z).collect::<Vec<i32>>());
+        history.insert(zs, steps);
+
+        step_time(&mut moons);
+
+        steps += 1;
+
+        let mut zs = moons.iter().map(|moon| moon.position.z).collect::<Vec<i32>>();
+        zs.extend(moons.iter().map(|moon| moon.velocity.z).collect::<Vec<i32>>());
+        // dbg!(&zs);
+        if let Some(first) = history.get(&zs) {
+            periods.push(steps - first);
+            firsts.push(first.clone());
+            break;
+        }
+    }
+
+    // dbg!(&periods);
+    // dbg!(&firsts);
 
     let steps = periods.iter().fold(1, |acc, period| {
-        dbg!(lcm(acc, *period));
+        // dbg!(lcm(acc, *period));
         lcm(acc, *period)
     });
     println!("{}", steps);
-
-    println!("4686774924");
-    for i in 0..4 {
-        let mut steps = firsts[i];
-        // let mut steps = 0;
-        while steps < 4686774924 {
-        // while steps < 2772 {
-            // dbg!(steps);
-            steps += periods[i];
-        }
-        dbg!(steps);
-    }
 }
