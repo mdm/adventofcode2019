@@ -13,33 +13,61 @@ struct Reaction {
     output: Chemical,
 }
 
-fn produce(chemical: &Chemical, reactions: &HashMap<String, Reaction>, available: &mut HashMap<String, u64>) -> u64 {
-    // println!("Producing {} {}", &chemical.amount, &chemical.name);
+fn producible_amount(a: u64, b: u64) -> (u64, u64) {
+    let floor = a / b;
+    if a % b == 0 {
+        (floor, 0)
+    } else {
+        let ceil = floor + 1;
+        let producible = ceil * b;
+        (ceil, producible - a)
+    }
+}
 
-    if chemical.name == "ORE" {
-        *available.entry(chemical.name.clone()).or_insert(0) += chemical.amount;
-        return chemical.amount;
+fn produce(request: &Chemical, reactions: &HashMap<String, Reaction>, spares: &mut HashMap<String, u64>, depth: u8) -> u64 {
+    // let indentation = (0..depth).map(|_| "  ").collect::<String>();
+
+    // println!("{}Producing {} {}", &indentation, &request.amount, &request.name);
+    // dbg!(&spares);
+
+    if request.name == "ORE" {
+        return request.amount;
     }
 
-    let reaction = reactions.get(&chemical.name).unwrap();
-    let reactions_needed = (chemical.amount as f32 / reaction.output.amount as f32).ceil() as u64;
-    *available.entry(chemical.name.clone()).or_insert(0) += reaction.output.amount * reactions_needed;
-    return (0..reactions_needed).fold(0, |acc, i| {
-        if chemical.name == "FUEL" && i % 1000 == 0{
-            dbg!(i);
+    let request_reaction = reactions.get(&request.name).unwrap();
+    let actual_amount = producible_amount(request.amount, request_reaction.output.amount);
+    if actual_amount.1 > 0 {
+        // println!("{}Produced {} spare {}", &indentation, &actual_amount.1, &request.name);
+    }
+    *spares.entry(request.name.clone()).or_insert(0) += actual_amount.1;
+    let mut total_ore = 0;
+    for input in &request_reaction.inputs {
+        if input.name == "ORE" {
+            let total_input = Chemical {
+                name: input.name.clone(),
+                amount: input.amount * actual_amount.0,
+            };
+            total_ore += produce(&total_input, reactions, spares, depth + 1);
+            continue;
         }
-        acc + reaction.inputs.iter().fold(0, |acc, input| {
-            let mut ore_used = 0;
-            let available_amount = *available.entry(input.name.clone()).or_insert(0);
-            if  available_amount < input.amount {
-                let missing_amount = input.amount - available_amount;
-                ore_used = produce(&Chemical { name: input.name.clone(), amount: missing_amount }, reactions, available);
+
+        let available_amount = *spares.entry(input.name.clone()).or_insert(0);
+        if input.amount * actual_amount.0 > available_amount {
+            let total_input = Chemical {
+                name: input.name.clone(),
+                amount: input.amount * actual_amount.0 - available_amount,
+            };
+            if available_amount > 0 {
+                // println!("{}Using {} spare {}", &indentation, &available_amount, &input.name);
+                *spares.entry(input.name.clone()).or_insert(0) = 0;
             }
-            // dbg!(input);
-            *available.entry(input.name.clone()).or_insert(0) -= input.amount;
-            acc + ore_used
-        })
-    });
+            total_ore += produce(&total_input, reactions, spares, depth + 1);
+        } else {
+            *spares.entry(input.name.clone()).or_insert(0) -= input.amount * actual_amount.0;
+        }
+    }
+
+    return total_ore;
 }
 
 fn main() {
@@ -68,23 +96,25 @@ fn main() {
         reactions.insert(reaction.output.name.clone(), reaction);
     }
 
+    // dbg!(&reactions);
+
     let mut available = HashMap::new();
     let desired = Chemical {
         name: "FUEL".to_string(),
         amount: 1,
     };
-    println!("{}", produce(&desired, &reactions, &mut available));
+    println!("{}", produce(&desired, &reactions, &mut available, 0));
 
     let mut factor = 100_000_000 as u64;
     let mut fuel = factor;
     loop {
-        dbg!(fuel);
+        // dbg!(fuel);
         let mut available = HashMap::new();
         let desired = Chemical {
             name: "FUEL".to_string(),
             amount: fuel,
         };
-        let ore_needed =  produce(&desired, &reactions, &mut available);
+        let ore_needed =  produce(&desired, &reactions, &mut available, 0);
 
         if ore_needed > 1_000_000_000_000 {
             if factor == 1 {
