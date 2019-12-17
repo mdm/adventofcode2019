@@ -369,6 +369,114 @@ fn path_length(path: &Vec<Command>) -> usize {
     path.iter().filter(|command| *command == &Command::MoveForward).count()
 }
 
+fn encode_path(path: &Vec<Command>) -> Vec<u8> {
+    let offset = 0;
+    let length = path.len();
+    let mut encoded = Vec::new();
+    let mut i = offset;
+    while i < offset + length {
+        let mut run_length = 0;
+        while let Some(&Command::MoveForward) = path.get(i) {
+            run_length += 1;
+            i += 1;
+        }
+
+        if run_length > 0 {
+            encoded.push(run_length);
+            encoded.push(44);
+        }
+
+        match path.get(i) {
+            Some(Command::TurnLeft) => {
+                encoded.push(76);
+                encoded.push(44);
+                i += 1;
+            }
+            Some(Command::TurnRight) => {
+                encoded.push(82);
+                encoded.push(44);
+                i += 1;
+            }
+            Some(Command::MoveForward) => unreachable!(),
+            None => {
+                break;
+            }
+        }
+    }
+
+    encoded.pop();
+    encoded
+}
+
+fn compress(path: &Vec<Command>, dictionary: &Vec<Vec<Command>>) -> Option<(Vec<u8>, Vec<Vec<Command>>)> {
+    let mut compressed = Vec::new();
+    let mut offset = 0;
+    while offset < path.len() {
+        let offset_backup = offset;
+        for (i, word) in dictionary.iter().enumerate() {
+            let mut is_match = true;
+            for j in 0..word.len() {
+                if let Some(command) = path.get(offset + j) {
+                    if *command != word[j] {
+                        is_match = false;
+                        break;
+                    }
+                } else {
+                    is_match = false;
+                    break;
+                }
+            }
+
+            if is_match {
+                compressed.push(match i {
+                    0 => 65,
+                    1 => 66,
+                    2 => 67,
+                    _ => unreachable!(),
+                });
+                compressed.push(44);
+                offset += word.len();
+            }
+        }
+
+        if offset == offset_backup {
+            break;
+        }
+    }
+
+    if offset == path.len() {
+        compressed.pop();
+        return Some((compressed, dictionary.clone()));
+    }
+
+    // no match
+    if dictionary.len() >= 3 {
+        // dbg!(dictionary.iter().map(|word| encode_path(word).len()).collect::<Vec<_>>());
+        return None;
+    }
+
+    // create new word and recurse
+    let mut new_dictionary = dictionary.clone();
+    if new_dictionary.len() == 0 || encode_path(new_dictionary.last().unwrap()).len() >= 19 {
+        new_dictionary.push(Vec::new());
+    }
+
+    while encode_path(new_dictionary.last().unwrap()).len() < 19 {
+        if let Some(word) = new_dictionary.last_mut() {
+            if let Some(letter) = path.get(offset + word.len()) {
+                word.push(letter.clone());
+                if let Some((compressed, dictionary)) = compress(path, &new_dictionary) {
+                    return Some((compressed, dictionary));
+                }
+            } else {
+                break;
+            }
+        }
+    }
+
+    return None;
+}
+
 fn main() {
     let mut input = String::new();
     std::io::stdin().read_line(&mut input).unwrap();
@@ -464,4 +572,14 @@ fn main() {
     let max_length = paths.iter().map(|path| path_length(path)).fold(0, |max, length| std::cmp::max(max, length));
     let candidates = paths.iter().filter(|path| path_length(path) == max_length).collect::<Vec<_>>();
     dbg!(max_length, paths.len(), candidates.len());
+
+    for (i, candidate) in candidates.iter().enumerate() {
+        if i % 1 == 0 {
+            println!("{}", i);
+        }
+        if let Some((compressed_path, dictionary)) = compress(candidate, &Vec::new()) {
+            dbg!(compressed_path, dictionary);
+            break;
+        }
+    }
 }
