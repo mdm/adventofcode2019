@@ -359,6 +359,7 @@ fn all_paths(
     }
 
     if open_directions == 0 {
+        // dbg!(visited.keys().len());
         paths_taken.push(path_so_far);
     }
 
@@ -408,68 +409,107 @@ fn encode_path(path: &Vec<Command>) -> Vec<u8> {
     encoded
 }
 
-fn compress(path: &Vec<Command>, dictionary: &Vec<Vec<Command>>) -> Option<(Vec<u8>, Vec<Vec<Command>>)> {
-    let mut compressed = Vec::new();
-    let mut offset = 0;
-    while offset < path.len() {
-        let offset_backup = offset;
-        for (i, word) in dictionary.iter().enumerate() {
-            let mut is_match = true;
-            for j in 0..word.len() {
-                if let Some(command) = path.get(offset + j) {
-                    if *command != word[j] {
-                        is_match = false;
-                        break;
-                    }
-                } else {
+fn find_next(haystack: &Vec<Command>, needle: &Vec<Command>, offset: usize) -> Option<usize> {
+    let mut offset = offset;
+    while offset < haystack.len() {
+        let mut is_match = true;
+        for i in 0..needle.len() {
+            if let Some(command) = haystack.get(offset + i) {
+                if *command != needle[i] {
                     is_match = false;
                     break;
                 }
-            }
-
-            if is_match {
-                compressed.push(match i {
-                    0 => 65,
-                    1 => 66,
-                    2 => 67,
-                    _ => unreachable!(),
-                });
-                compressed.push(44);
-                offset += word.len();
+            } else {
+                is_match = false;
+                break;
             }
         }
 
-        if offset == offset_backup {
+        if is_match {
+            return Some(offset);
+        }
+
+        offset += 1;
+    }
+
+    return None;
+}
+
+fn compress(path: &Vec<Command>) -> Option<(Vec<u8>, Vec<Vec<u8>>)> {
+    let mut starts = Vec::new();
+    let mut start = Vec::new();
+    loop {
+        if let Some(command) = path.get(start.len()) {
+            start.push(command.clone());
+        }
+
+        if encode_path(&start).len() < 20 {
+            starts.push(start.clone());
+        } else {
             break;
         }
     }
 
-    if offset == path.len() {
-        compressed.pop();
-        return Some((compressed, dictionary.clone()));
+    let mut ends = Vec::new();
+    let mut end = Vec::new();
+    loop {
+        if let Some(command) = path.get(path.len() - 1 - end.len()) {
+            let mut new_end = vec!(command.clone());
+            new_end.extend(end);
+            end = new_end;
+        }
+
+        if encode_path(&end).len() < 20 {
+            ends.push(end.clone());
+        } else {
+            break;
+        }
     }
 
-    // no match
-    if dictionary.len() >= 3 {
-        // dbg!(dictionary.iter().map(|word| encode_path(word).len()).collect::<Vec<_>>());
-        return None;
-    }
+    for a in starts.iter().rev() {
+        for b in ends.iter().rev() {
+            let mut dictionary = Vec::new();
+            dictionary.push(a.clone());
+            dictionary.push(b.clone());
 
-    // create new word and recurse
-    let mut new_dictionary = dictionary.clone();
-    if new_dictionary.len() == 0 || encode_path(new_dictionary.last().unwrap()).len() >= 19 {
-        new_dictionary.push(Vec::new());
-    }
+            let mut compressed = Vec::new();
+            let mut offset = 0;
+            while offset < path.len() {
+                let mut occurrences = dictionary.iter().map(|word| (word, find_next(path, word, offset))).collect::<Vec<_>>();
+                occurrences.sort_by(|word1, word2| match (word1.1, word2.1) {
+                    (Some(offset1), Some(offset2)) => offset1.cmp(&offset2),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => std::cmp::Ordering::Equal,
+                });
 
-    while encode_path(new_dictionary.last().unwrap()).len() < 19 {
-        if let Some(word) = new_dictionary.last_mut() {
-            if let Some(letter) = path.get(offset + word.len()) {
-                word.push(letter.clone());
-                if let Some((compressed, dictionary)) = compress(path, &new_dictionary) {
-                    return Some((compressed, dictionary));
+                if let (word, Some(occurrence)) = occurrences[0] {
+                    if occurrence == offset
+                    {
+                        compressed.push(match dictionary.iter().position(|w| w == word) {
+                            Some(0) => 65,
+                            Some(1) => 66,
+                            Some(2) => 67,
+                            _ => unreachable!(),
+                        });
+                        compressed.push(44);
+                        offset += word.len();
+                    } else if dictionary.len() < 3 {
+                        let c = path.iter().skip(offset).take(occurrence - offset).cloned().collect::<Vec<_>>();
+                        if encode_path(&c).len() < 20 {
+                            dictionary.push(c);
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
                 }
-            } else {
-                break;
+            }
+
+            if offset == path.len() && compressed.len() <= 20 {
+                compressed.pop();
+                return Some((compressed, dictionary.iter().map(|word| encode_path(word)).collect::<Vec<_>>()));
             }
         }
     }
@@ -508,6 +548,29 @@ fn main() {
                 break;
             }
         };
+
+// for output in "#######...#####\n\
+// #.....#...#...#\n\
+// #.....#...#...#\n\
+// ......#...#...#\n\
+// ......#...###.#\n\
+// ......#.....#.#\n\
+// ^########...#.#\n\
+// ......#.#...#.#\n\
+// ......#########\n\
+// ........#...#..\n\
+// ....#########..\n\
+// ....#...#......\n\
+// ....#...#......\n\
+// ....#...#......\n\
+// ....#####......\n".chars() {
+//         let ascii_code = match output {
+//             '#' => 35,
+//             '.' => 46,
+//             '\n' => 10,
+//             '^' => 94,
+//             _ => 46,
+//         };
 
         match ascii_code {
             35 => {
@@ -577,9 +640,10 @@ fn main() {
         if i % 1 == 0 {
             println!("{}", i);
         }
-        if let Some((compressed_path, dictionary)) = compress(candidate, &Vec::new()) {
+        if let Some((compressed_path, dictionary)) = compress(candidate) {
             dbg!(compressed_path, dictionary);
             break;
         }
+        // break;
     }
 }
