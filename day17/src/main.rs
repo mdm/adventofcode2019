@@ -18,7 +18,7 @@ impl Position {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 enum Direction {
     Up,
     Right,
@@ -70,7 +70,7 @@ enum MapTile {
     OpenSpace,
 }
 
-#[derive(Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 struct Robot {
     position: Position,
     orientation: Direction,
@@ -306,6 +306,154 @@ fn display(map: &HashMap::<Position, MapTile>) {
     println!("{}\n---", snapshot);
 }
 
+fn walk_word(map: &HashMap::<Position, MapTile>, word: &Vec<Command>, mut robot: Robot) -> Option<Robot> {
+    for command in word {
+        match command {
+            Command::TurnLeft => {
+                robot.turn_left();
+            }
+            Command::TurnRight => {
+                robot.turn_right();
+            }
+            Command::MoveForward => {
+                robot.move_forward(false);
+                if map.get(&robot.position) == Some(&MapTile::OpenSpace)
+                || map.get(&robot.position) == None {
+                    return None;
+                }
+            }
+        }
+    }
+
+    return Some(robot);
+}
+
+fn walk_dictionary(
+    map: &HashMap::<Position, MapTile>,
+    dictionary: &Vec<Vec<Command>>,
+    robot: Robot,
+    target: &Position
+) -> (Robot, Vec<u8>) {
+    for (i, word) in dictionary.iter().enumerate() {
+        if word.len() == 0 {
+            continue;
+        }
+
+        if let Some(new_robot) = walk_word(map, word, robot.clone()) {
+            if new_robot.position == *target {
+                let book = vec!(match i {
+                    0 => 65,
+                    1 => 66,
+                    2 => 67,
+                    _ => unreachable!(),
+                });
+
+                return (new_robot, book);
+            }
+
+            let (new_robot, new_book) = walk_dictionary(map, dictionary, new_robot, target);
+            if new_robot != robot {
+                let mut new_book = new_book;
+                new_book.push(44);
+                new_book.push(match i {
+                    0 => 65,
+                    1 => 66,
+                    2 => 67,
+                    _ => unreachable!(),
+                });
+                return (new_robot, new_book);
+            }
+        }
+    }
+
+    return (robot, Vec::new());
+}
+
+fn next_steps(
+    map: &HashMap::<Position, MapTile>,
+    robot: &Robot,
+    length: usize,
+    steps_so_far: Vec<Command>
+) -> Vec<Vec<Command>> {
+    let mut steps = Vec::new();
+
+    dbg!(encode_path(&steps_so_far).len());
+    if encode_path(&steps_so_far).len() / 2 == length {
+        steps.push(steps_so_far.clone());
+        dbg!(&steps);
+    }
+
+    let mut new_robot = robot.clone();
+    new_robot.move_forward(false);
+    if map.get(&new_robot.position) != Some(&MapTile::OpenSpace)
+    && map.get(&new_robot.position) != None {
+        dbg!("FORWARD");
+        let mut new_steps_so_far = steps_so_far.clone();
+        new_steps_so_far.push(Command::MoveForward);
+        steps.extend(next_steps(map, &new_robot, length, new_steps_so_far));
+    }
+
+    if encode_path(&steps_so_far).len() / 2 == length {
+        dbg!(&steps);
+        return steps;
+    }
+
+    let mut new_robot = robot.clone();
+    new_robot.turn_left();
+    new_robot.move_forward(false);
+    if map.get(&new_robot.position) != Some(&MapTile::OpenSpace)
+    && map.get(&new_robot.position) != None {
+        dbg!("LEFT");
+        let mut new_steps_so_far = steps_so_far.clone();
+        new_steps_so_far.push(Command::TurnLeft);
+        new_steps_so_far.push(Command::MoveForward);
+        steps.extend(next_steps(map, &new_robot, length, new_steps_so_far));
+    }
+
+    let mut new_robot = robot.clone();
+    new_robot.turn_right();
+    new_robot.move_forward(false);
+    if map.get(&new_robot.position) != Some(&MapTile::OpenSpace)
+    && map.get(&new_robot.position) != None {
+        dbg!("RIGHT");
+        let mut new_steps_so_far = steps_so_far.clone();
+        new_steps_so_far.push(Command::TurnRight);
+        new_steps_so_far.push(Command::MoveForward);
+        steps.extend(next_steps(map, &new_robot, length, new_steps_so_far));
+    }
+
+    dbg!(&steps);
+    return steps;
+}
+
+fn find_path(
+    map: &HashMap::<Position, MapTile>,
+    dictionary: &Vec<Vec<Command>>,
+    robot: Robot,
+    target: &Position,
+    depth: usize
+) -> Option<(Vec<u8>, Vec<Vec<u8>>)> {
+    if depth >= 3 {
+        return None;
+    }
+
+    for length in 1..11 {
+        for step in next_steps(map, &robot, length, Vec::new()) {
+            let mut new_dictionary = dictionary.clone();
+            new_dictionary[depth].extend(step);
+            let (new_robot, book) = walk_dictionary(map, &new_dictionary, robot.clone(), target);
+            if new_robot.position == *target {
+                return Some((book, new_dictionary.iter().map(|word| encode_path(word)).collect::<Vec<_>>()));
+            }
+
+            if let Some(path) = find_path(map, &new_dictionary, new_robot, target, depth + 1) {
+                return Some(path);
+            }
+        }
+    }
+    return None;
+}
+
 fn all_paths(
     map: &HashMap::<Position, MapTile>,
     robot: Robot,
@@ -405,7 +553,7 @@ fn encode_path(path: &Vec<Command>) -> Vec<u8> {
         }
     }
 
-    encoded.pop();
+    // encoded.pop();
     encoded
 }
 
@@ -539,38 +687,38 @@ fn main() {
     let mut robot = None;
     let mut width = 0;
     let mut height = 0;
-    loop {
-        let ascii_code = match run(&mut context) {
-            Some(output) => {
-                output
-            }
-            None => {
-                break;
-            }
-        };
+    // loop {
+    //     let ascii_code = match run(&mut context) {
+    //         Some(output) => {
+    //             output
+    //         }
+    //         None => {
+    //             break;
+    //         }
+    //     };
 
-// for output in "#######...#####\n\
-// #.....#...#...#\n\
-// #.....#...#...#\n\
-// ......#...#...#\n\
-// ......#...###.#\n\
-// ......#.....#.#\n\
-// ^########...#.#\n\
-// ......#.#...#.#\n\
-// ......#########\n\
-// ........#...#..\n\
-// ....#########..\n\
-// ....#...#......\n\
-// ....#...#......\n\
-// ....#...#......\n\
-// ....#####......\n".chars() {
-//         let ascii_code = match output {
-//             '#' => 35,
-//             '.' => 46,
-//             '\n' => 10,
-//             '^' => 94,
-//             _ => 46,
-//         };
+for output in "#######...#####\n\
+#.....#...#...#\n\
+#.....#...#...#\n\
+......#...#...#\n\
+......#...###.#\n\
+......#.....#.#\n\
+^########...#.#\n\
+......#.#...#.#\n\
+......#########\n\
+........#...#..\n\
+....#########..\n\
+....#...#......\n\
+....#...#......\n\
+....#...#......\n\
+....#####......\n".chars() {
+        let ascii_code = match output {
+            '#' => 35,
+            '.' => 46,
+            '\n' => 10,
+            '^' => 94,
+            _ => 46,
+        };
 
         match ascii_code {
             35 => {
@@ -630,6 +778,70 @@ fn main() {
 
     context.program[0] = 2;
 
+    let dictionary = vec!(
+        vec!(
+            Command::TurnRight,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::TurnRight,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+        ),
+        vec!(
+            Command::TurnRight,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::TurnRight,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::TurnRight,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+        ),
+        vec!(
+            Command::TurnLeft,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::MoveForward,
+            Command::TurnLeft,
+            Command::MoveForward,
+            Command::MoveForward,
+        ),
+    );
+    dbg!(next_steps(&map, &robot.unwrap(), 1, Vec::new()));
+    return;
+    // let dictionary = vec!(Vec::new(), Vec::new(), Vec::new());
+    dbg!(walk_dictionary(&map, &dictionary, robot.unwrap(), &Position { x: 0, y: 2 }));
+    return;
+    let dictionary = vec!(Vec::new(), Vec::new(), Vec::new());
+    dbg!(find_path(&map, &dictionary, robot.unwrap(), &Position { x: 0, y: 2 }, 0));
+
+    return;
     let paths = all_paths(&map, robot.unwrap(), &HashMap::new(), Vec::new());
 
     let max_length = paths.iter().map(|path| path_length(path)).fold(0, |max, length| std::cmp::max(max, length));
