@@ -66,7 +66,7 @@ fn can_visit(
         MapTile::Floor => true,
         MapTile::Wall => false,
         MapTile::Explorer => true,
-        MapTile::Key(key) => true,
+        MapTile::Key(_key) => true,
         MapTile::Door(door) => held_keys.contains(&door.to_ascii_lowercase()),
     }
 }
@@ -135,48 +135,69 @@ fn reachable_keys(
 
 fn collect_keys(
     map: &Vec<Vec<MapTile>>,
-    explorer: &Position,
+    explorers: &Vec<Position>,
     held_keys: &HashSet<char>,
-    memo: &mut HashMap<(Position, String), u32>
+    memo: &mut HashMap<(usize, String), u32>
 ) -> u32 {
     let mut held_keys_vec = held_keys.iter().cloned().collect::<Vec<char>>();
     held_keys_vec.sort();
     let held_keys_string = held_keys_vec.iter().collect::<String>();
-    if let Some(saved_min_steps) = memo.get(&(explorer.clone(), held_keys_string.clone())) {
+
+    let width = map[0].len();
+    let height = map.len();
+    let mut position_hash = 0;
+    for explorer in explorers {
+        position_hash *= width * height;
+        position_hash += explorer.y * width + explorer.x;
+    }
+
+    if let Some(saved_min_steps) = memo.get(&(position_hash, held_keys_string.clone())) {
+        dbg!("return");
         return *saved_min_steps;
     }
 
-    let key_locations = reachable_keys(&map, &explorer, &held_keys);
+    let mut min_steps_all = 0;
+    for (i, explorer) in explorers.iter().enumerate() {
+        let key_locations = reachable_keys(&map, &explorer, &held_keys);
 
-    if key_locations.len() == 0 {
-        return 0;
+        if key_locations.len() == 0 {
+            dbg!("return");
+            continue;
+        }
+
+        let mut min_steps = std::u32::MAX;
+        for (key, location) in key_locations {
+            let mut new_map = (*map).clone();
+            new_map[location.position.y][location.position.x] = MapTile::Explorer;
+            new_map[explorer.y][explorer.x] = MapTile::Floor;
+
+            let mut new_explorers = explorers.clone();
+            new_explorers[i] = location.position;
+
+            let mut new_held_keys = held_keys.clone();
+            new_held_keys.insert(key);
+
+            dbg!(i, key, min_steps, min_steps_all, location.distance);
+            min_steps = std::cmp::min(
+                min_steps,
+                location.distance + collect_keys(&new_map, &new_explorers, &new_held_keys, memo)
+            );
+        }
+
+        min_steps_all += min_steps;
     }
 
-    let mut min_steps = std::u32::MAX;
-    for (key, location) in key_locations {
-        let mut new_map = (*map).clone();
-        new_map[location.position.y][location.position.x] = MapTile::Explorer;
-        new_map[explorer.y][explorer.x] = MapTile::Floor;
+    memo.insert((position_hash, held_keys_string), min_steps_all);
 
-        let mut new_held_keys = held_keys.clone();
-        new_held_keys.insert(key);
-
-        min_steps = std::cmp::min(
-            min_steps,
-            location.distance + collect_keys(&new_map, &location.position, &new_held_keys, memo)
-        );
-    }
-
-    memo.insert((explorer.clone(), held_keys_string), min_steps);
-
-    return min_steps;
+    dbg!("return");
+    return min_steps_all;
 }
 
 fn main() {
     let stdin = std::io::stdin();
     let mut explorers = Vec::new();
     let mut num_keys = 0;
-    let map = stdin.lock().lines().enumerate().map(|(y, row)| {
+    let mut map = stdin.lock().lines().enumerate().map(|(y, row)| {
         row.unwrap().chars().enumerate().map(|(x, character)| match character {
             '.' => MapTile::Floor,
             '#' => MapTile::Wall,
@@ -194,6 +215,32 @@ fn main() {
     }).collect::<Vec<_>>();
 
     display(&map);
-    println!("{}", collect_keys(&map, &explorers[0], &HashSet::new(), &mut HashMap::new()));
+    println!("{}", collect_keys(&map, &explorers, &HashSet::new(), &mut HashMap::new()));
+
+    let new_walls = vec!(
+        explorers[0].clone(),
+        explorers[0].step(&Direction::Up),
+        explorers[0].step(&Direction::Right),
+        explorers[0].step(&Direction::Down),
+        explorers[0].step(&Direction::Left),
+    );
+
+    for wall in new_walls {
+        map[wall.y][wall.x] = MapTile::Wall;
+    }
+
+    let new_explorers = vec!(
+        explorers[0].step(&Direction::Up).step(&Direction::Left),
+        explorers[0].step(&Direction::Up).step(&Direction::Right),
+        explorers[0].step(&Direction::Down).step(&Direction::Left),
+        explorers[0].step(&Direction::Down).step(&Direction::Right),
+    );
+
+    for explorer in new_explorers.clone() {
+        map[explorer.y][explorer.x] = MapTile::Explorer;
+    }
+
+    display(&map);
+    println!("{}", collect_keys(&map, &new_explorers, &HashSet::new(), &mut HashMap::new()));
 }
 
