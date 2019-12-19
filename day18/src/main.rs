@@ -152,20 +152,17 @@ fn collect_keys(
     }
 
     if let Some(saved_min_steps) = memo.get(&(position_hash, held_keys_string.clone())) {
-        dbg!("return");
         return *saved_min_steps;
     }
 
-    let mut min_steps_all = 0;
+    let mut min_steps = std::u32::MAX;
     for (i, explorer) in explorers.iter().enumerate() {
         let key_locations = reachable_keys(&map, &explorer, &held_keys);
 
         if key_locations.len() == 0 {
-            dbg!("return");
             continue;
         }
 
-        let mut min_steps = std::u32::MAX;
         for (key, location) in key_locations {
             let mut new_map = (*map).clone();
             new_map[location.position.y][location.position.x] = MapTile::Explorer;
@@ -177,20 +174,20 @@ fn collect_keys(
             let mut new_held_keys = held_keys.clone();
             new_held_keys.insert(key);
 
-            dbg!(i, key, min_steps, min_steps_all, location.distance);
             min_steps = std::cmp::min(
                 min_steps,
                 location.distance + collect_keys(&new_map, &new_explorers, &new_held_keys, memo)
             );
         }
-
-        min_steps_all += min_steps;
     }
 
-    memo.insert((position_hash, held_keys_string), min_steps_all);
+    if min_steps == std::u32::MAX {
+        min_steps = 0;
+    }
 
-    dbg!("return");
-    return min_steps_all;
+    memo.insert((position_hash, held_keys_string), min_steps);
+
+    return min_steps;
 }
 
 fn main() {
@@ -214,7 +211,7 @@ fn main() {
         }).collect::<Vec<_>>()
     }).collect::<Vec<_>>();
 
-    display(&map);
+    // display(&map);
     println!("{}", collect_keys(&map, &explorers, &HashSet::new(), &mut HashMap::new()));
 
     let new_walls = vec!(
@@ -240,7 +237,7 @@ fn main() {
         map[explorer.y][explorer.x] = MapTile::Explorer;
     }
 
-    display(&map);
+    // display(&map);
     println!("{}", collect_keys(&map, &new_explorers, &HashSet::new(), &mut HashMap::new()));
 }
 
