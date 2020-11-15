@@ -1,107 +1,85 @@
 use std::io::BufRead;
-use std::collections::HashMap;
+
+const DECK_SIZE_PART_1: u64 = 10007;
+const DECK_SIZE_PART_2: u64 = 119315717514047;
+
+const NUM_SHUFFLES_PART_1: u64 = 1;
+const NUM_SHUFFLES_PART_2: u64 = 101741582076661;
+
+const STARTING_CARD_PART_1: u64 = 2019;
+const STARTING_CARD_PART_2: u64 = 2020;
 
 #[derive(Debug, Clone)]
 enum Technique {
     DealNewStack,
-    DealWithIncrement(usize),
+    DealWithIncrement(u64),
     Cut(i64),
 }
 
-fn apply_technique(deck: Vec<u64>, technique: &Technique) -> Vec<u64> {
-    match technique {
-        Technique::DealNewStack => {
-            let mut new_deck = deck.clone();
-            new_deck.reverse();
-            new_deck
-        }
-        Technique::DealWithIncrement(increment) => {
-            let mut new_deck = deck.clone();
-            for i in 0..deck.len() {
-                let deck_len = new_deck.len();
-                new_deck[i * increment % deck_len] = deck[i];
-            }
-
-            new_deck
-        }
-        Technique::Cut(cards) => {
-            if *cards < 0 {
-                let cards = -cards as usize;
-                let mut new_deck = deck.clone();
-                for i in 0..cards {
-                    new_deck[i] = deck[deck.len() - cards + i];
-                }
-                for i in cards..deck.len() {
-                    new_deck[i] = deck[i - cards];
-                }
-                new_deck
-            } else {
-                let cards = *cards as usize;
-                let mut new_deck = deck.clone();
-                for i in 0..cards {
-                    new_deck[deck.len() - cards + i] = deck[i];
-                }
-                for i in cards..deck.len() {
-                    new_deck[i - cards] = deck[i];
-                }
-                new_deck
-            }
-        }
-    }
+struct Shuffle {
+    deck_size: u64,
+    dependent: u64,
+    independent: u64,
 }
 
-fn naive_shuffle(deck: &Vec<u64>, techniques: &Vec<Technique>) -> Vec<u64> {
-    let mut deck = deck.clone();
-    for technique in techniques {
-        deck = apply_technique(deck, technique);
-    }
-
-    deck
-}
-
-fn track_card(deck_size: usize, card_index: usize, rounds: usize, techniques: &Vec<Technique>) -> usize {
-    let mut techniques = (*techniques).clone();
-    techniques.reverse();
-
-    let mut card_index = card_index;
-    // let mut history = HashMap::new();
-    for _i in 0..rounds {
-        for technique in &techniques {
-            card_index = match technique {
-                Technique::DealNewStack => deck_size - card_index - 1,
-                Technique::DealWithIncrement(increment) => {
-                    let mut tmp = card_index;
-                    while tmp % increment > 0 {
-                        let old_temp = tmp;
-                        tmp += deck_size;
-                        if old_temp > tmp {
-                            dbg!(old_temp, tmp);
-                        }
-                    }
-                    tmp / increment
-                },
-                Technique::Cut(cards) => {
-                    if *cards < 0 {
-                        let cards = -cards as usize;
-                        if card_index < cards {
-                            card_index + (deck_size - cards)
-                        } else {
-                            card_index - cards
-                        }
-                    } else {
-                        let cards = *cards as usize;
-                        if card_index < deck_size - cards {
-                            card_index + cards
-                        } else {
-                            card_index - (deck_size - cards)
-                        }
-                    }
-                },
-            };
+impl Shuffle {
+    fn new(deck_size: u64) -> Shuffle {
+        Shuffle {
+            deck_size,
+            dependent: 1,
+            independent: 0,
         }
     }
 
-    return card_index;
+    fn double(shuffle: &Shuffle) -> Shuffle {
+        let dependent = (shuffle.dependent * shuffle.dependent) % shuffle.deck_size;
+        let independent = (((shuffle.dependent * shuffle.independent) % shuffle.deck_size) + shuffle.independent) % shuffle.deck_size;
+
+        Shuffle {
+            deck_size: shuffle.deck_size,
+            dependent,
+            independent,
+        }
+    }
+
+    fn add_constant(&mut self, n: u64) {
+        self.independent += n;
+        self.independent %= self.deck_size;
+    }
+
+    fn multiply_constant(&mut self, n: u64) {
+        dbg!(self.dependent, n);
+        self.dependent *= n;
+        self.dependent %= self.deck_size;
+        self.independent *= n;
+        self.independent %= self.deck_size;
+    }
+
+    fn apply_technique(&mut self, technique: &Technique) {
+        match technique {
+            Technique::DealNewStack => {
+                self.add_constant(1);
+                self.multiply_constant(self.deck_size - 1);
+            }
+            Technique::DealWithIncrement(n) => {
+                self.multiply_constant(*n);
+            }
+            Technique::Cut(n) => {
+                self.add_constant((self.deck_size as i64 - n) as u64);
+            }
+        }
+    }
+
+    fn apply_shuffle(&mut self, other: &Shuffle) {
+        self.dependent *= other.dependent;
+        self.dependent %= self.deck_size;
+        self.independent += (self.dependent * other.independent) % self.deck_size;
+        self.independent %= self.deck_size;
+    }
+
+    fn evaluate(&self, x: u64) -> u64 {
+        (((self.dependent * x) % self.deck_size) + self.independent) % self.deck_size
+    }
 }
 
 fn main() {
@@ -114,7 +92,7 @@ fn main() {
                     techniques.push(Technique::DealNewStack);
                 }
                 "increment" => {
-                    if let Ok(increment) = tokens[tokens.len() - 1].parse::<usize>() {
+                    if let Ok(increment) = tokens[tokens.len() - 1].parse::<u64>() {
                         techniques.push(Technique::DealWithIncrement(increment));
                     }
                 }
@@ -130,21 +108,25 @@ fn main() {
         }
     }
 
-    let mut deck = Vec::new();
-    for i in 0..10007 {
-        deck.push(i);
+    let mut shuffle = Shuffle::new(DECK_SIZE_PART_1);
+    for technique in techniques.iter() {
+        shuffle.apply_technique(technique);
     }
+    println!("{}", shuffle.evaluate(STARTING_CARD_PART_1));
 
-    deck = naive_shuffle(&deck, &techniques);
-
-    for (i, card) in deck.iter().enumerate() {
-        if *card == 2019 {
-            println!("{}", i);
-            break;
+    let mut shuffle = Shuffle::new(DECK_SIZE_PART_2);
+    for technique in techniques.iter() {
+        shuffle.apply_technique(technique);
+    }
+    let mut final_shuffle = Shuffle::new(DECK_SIZE_PART_2);
+    let mut mask: u64 = 1;
+    while mask < NUM_SHUFFLES_PART_2 {
+        if (mask & NUM_SHUFFLES_PART_2) != 0 {
+            final_shuffle.apply_shuffle(&shuffle);
         }
+
+        shuffle = Shuffle::double(&shuffle);
+        mask <<= 1;
     }
-
-    // println!("{}", track_card(10007, 3589, 1, &techniques));
-
-    println!("{}", track_card(119315717514047, 2020, 101741582076661, &techniques));
+    println!("{}", final_shuffle.evaluate(STARTING_CARD_PART_2));
 }
