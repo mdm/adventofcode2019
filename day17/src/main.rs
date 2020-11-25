@@ -88,7 +88,7 @@ impl Robot {
     fn move_forward(&mut self, pretend: bool) -> Position {
         let new_position = self.position.step(&self.orientation);
 
-        if !pretend {
+        if !pretend { // TODO: do we still need this?
             self.position = new_position.clone();
         }
 
@@ -307,231 +307,81 @@ fn display(map: &HashMap::<Position, MapTile>) {
     println!("{}\n---", snapshot);
 }
 
-fn walk_word(map: &HashMap::<Position, MapTile>, word: &Vec<Command>, mut robot: Robot) -> Option<Robot> {
-    for command in word {
-        match command {
-            Command::TurnLeft => {
-                robot.turn_left();
-            }
-            Command::TurnRight => {
-                robot.turn_right();
-            }
-            Command::MoveForward => {
-                robot.move_forward(false);
-                if map.get(&robot.position) == Some(&MapTile::OpenSpace)
-                || map.get(&robot.position) == None {
-                    return None;
-                }
-            }
-        }
-    }
-
-    return Some(robot);
-}
-
-fn walk_dictionary(
+fn find_paths(
     map: &HashMap::<Position, MapTile>,
-    dictionary: &Vec<Vec<Command>>,
-    robot: Robot,
+    robot: &Robot,
     target: &Position,
-    history: &HashMap<Position, HashSet<usize>>
-) -> (Robot, Vec<usize>) {
-    for (i, word) in dictionary.iter().enumerate() {
-        if word.len() == 0 {
-            continue;
-        }
+) -> Option<Vec<Vec<Command>>> {
+    // BFS
 
-        // if robot position in history don't use the same word as last time
-        if let Some(visited) = history.get(&robot.position) {
-            if visited.contains(&i) {
-                continue;
+    let target_steps: u32 = map.values().map(|tile| match tile {
+        MapTile::Scaffold => 1,
+        MapTile::Intersection => 2,
+        _ => 0,
+    }).sum();
+
+    let mut queue = VecDeque::new();
+    let mut seen = HashSet::new();
+    queue.push_back((robot.clone(), vec!()));
+    seen.insert(robot.position.clone());
+    let mut path_id = 0;
+
+    while let Some(current) = queue.pop_front() {
+        // dbg!(&current);
+        if current.0.position == *target {
+            let steps: u32 = current.1.iter().map(|command| match command {
+                Command::MoveForward => 1,
+                _ => 0,
+            }).sum();
+            dbg!(steps, target_steps);
+            if steps == target_steps {
+                dbg!(path_id, encode_path(&current.1), &current.1);
+                path_id += 1;
             }
         }
 
-        if let Some(new_robot) = walk_word(map, word, robot.clone()) {
-            if new_robot.position == *target {
-                let book = vec!(i);
-                return (new_robot, book);
-            }
+        let mut new_robot = current.0.clone();
+        new_robot.move_forward(false);
+        // if (map.get(&new_robot.position) == Some(&MapTile::Scaffold) && !seen.contains(&new_robot.position))
+        if map.get(&new_robot.position) == Some(&MapTile::Scaffold)
+        || map.get(&new_robot.position) == Some(&MapTile::Intersection) {
+            let mut path_so_far = current.1.clone();
+            path_so_far.push(Command::MoveForward);
+            seen.insert(new_robot.position.clone());
+            queue.push_back((new_robot, path_so_far));
+        }
 
-            // record history
+        let mut new_robot = current.0.clone();
+        new_robot.turn_left();
+        new_robot.move_forward(false);
+        // if (map.get(&new_robot.position) == Some(&MapTile::Scaffold) && !seen.contains(&new_robot.position))
+        if map.get(&new_robot.position) == Some(&MapTile::Scaffold)
+        || map.get(&new_robot.position) == Some(&MapTile::Intersection) {
+            let mut path_so_far = current.1.clone();
+            path_so_far.push(Command::TurnLeft);
+            path_so_far.push(Command::MoveForward);
+            seen.insert(new_robot.position.clone());
+            queue.push_back((new_robot, path_so_far));
+        }
 
-            let mut new_history = history.clone();
-            match new_history.get_mut(&robot.position) {
-                Some(visited) => {
-                    visited.insert(i);
-                }
-                None => {
-                    let mut visited = HashSet::new();
-                    visited.insert(i);
-                    new_history.insert(robot.position.clone(), visited);
-                }
-            }
-
-            let (new_robot, new_book) = walk_dictionary(map, dictionary, new_robot, target, &new_history);
-            if new_robot != robot {
-                let mut new_book = new_book;
-                new_book.push(i);
-                return (new_robot, new_book);
-            }
+        let mut new_robot = current.0.clone();
+        new_robot.turn_right();
+        new_robot.move_forward(false);
+        // if (map.get(&new_robot.position) == Some(&MapTile::Scaffold) && !seen.contains(&new_robot.position))
+        if map.get(&new_robot.position) == Some(&MapTile::Scaffold)
+        || map.get(&new_robot.position) == Some(&MapTile::Intersection) {
+            let mut path_so_far = current.1.clone();
+            path_so_far.push(Command::TurnRight);
+            path_so_far.push(Command::MoveForward);
+            seen.insert(new_robot.position.clone());
+            queue.push_back((new_robot, path_so_far));
         }
     }
 
-    return (robot, Vec::new());
-}
-
-fn next_steps(
-    map: &HashMap::<Position, MapTile>,
-    robot: &Robot,
-    length: usize,
-    steps_so_far: Vec<Command>
-) -> Vec<Vec<Command>> {
-    let mut steps = Vec::new();
-
-    let encoded_length = encode_path(&steps_so_far).len();
-
-    // dbg!(encoded_length);
-    if encoded_length / 2 > length {
-        // dbg!(&steps);
-        return steps;
-    }
-
-    if encoded_length / 2 == length {
-        steps.push(steps_so_far.clone());
-        // dbg!(&steps);
-    }
-
-    let mut new_robot = robot.clone();
-    new_robot.move_forward(false);
-    if map.get(&new_robot.position) != Some(&MapTile::OpenSpace)
-    && map.get(&new_robot.position) != None {
-        // dbg!("FORWARD");
-        let mut new_steps_so_far = steps_so_far.clone();
-        new_steps_so_far.push(Command::MoveForward);
-        steps.extend(next_steps(map, &new_robot, length, new_steps_so_far));
-    }
-
-    if encoded_length / 2 == length {
-        // dbg!(&steps);
-        return steps;
-    }
-
-    let mut new_robot = robot.clone();
-    new_robot.turn_left();
-    // new_robot.move_forward(false);
-    // if map.get(&new_robot.position) != Some(&MapTile::OpenSpace)
-    // && map.get(&new_robot.position) != None {
-    if steps_so_far.last() != Some(&Command::TurnLeft) && steps_so_far.last() != Some(&Command::TurnRight) {
-        // dbg!("LEFT");
-        let mut new_steps_so_far = steps_so_far.clone();
-        new_steps_so_far.push(Command::TurnLeft);
-        // new_steps_so_far.push(Command::MoveForward);
-        steps.extend(next_steps(map, &new_robot, length, new_steps_so_far));
-    }
-
-    let mut new_robot = robot.clone();
-    new_robot.turn_right();
-    // new_robot.move_forward(false);
-    // if map.get(&new_robot.position) != Some(&MapTile::OpenSpace)
-    // && map.get(&new_robot.position) != None {
-    if steps_so_far.last() != Some(&Command::TurnLeft) && steps_so_far.last() != Some(&Command::TurnRight) {
-        // dbg!("RIGHT");
-        let mut new_steps_so_far = steps_so_far.clone();
-        new_steps_so_far.push(Command::TurnRight);
-        // new_steps_so_far.push(Command::MoveForward);
-        steps.extend(next_steps(map, &new_robot, length, new_steps_so_far));
-    }
-
-    // dbg!(&steps);
-    return steps;
-}
-
-fn check_path(
-    map: &HashMap::<Position, MapTile>,
-    book_so_far: &Vec<usize>,
-    dictionary: &Vec<Vec<Command>>,
-    robot: &Robot,
-    target: &Position
-) -> bool {
-    let mut new_map = map.clone();
-    let mut new_robot = robot.clone();
-
-    new_map.insert(new_robot.position.clone(), MapTile::Robot);
-
-    for i in book_so_far {
-        for command in dictionary[*i].clone() {
-            match command {
-                Command::TurnLeft => {
-                    new_robot.turn_left();
-                }
-                Command::TurnRight => {
-                    new_robot.turn_right();
-                }
-                Command::MoveForward => {
-                    new_robot.move_forward(false);
-                    new_map.insert(new_robot.position.clone(), MapTile::Robot);
-                    if map.get(&new_robot.position) == Some(&MapTile::OpenSpace)
-                    || map.get(&new_robot.position) == None {
-                        // dbg!("OOPS");
-                        // return false;
-                    }
-                }
-            }
-        }
-    }
-
-    if new_robot.position != *target {
-        // return false;
-    }
-
-    display(&new_map);
-    return true;
-
-    return new_map.values().all(|value| value == &MapTile::OpenSpace);
-}
-
-fn find_path(
-    map: &HashMap::<Position, MapTile>,
-    dictionary: &Vec<Vec<Command>>,
-    robot: &Robot,
-    original_robot: &Robot,
-    target: &Position,
-    depth: usize,
-    book_so_far: &Vec<usize>
-) -> Option<(Vec<usize>, Vec<Vec<Command>>)> {
-    if depth >= 3 {
-        return None;
-    }
-
-    for length in 2..11 {
-        if depth == 0 {
-            dbg!(&length);
-        }
-        for step in next_steps(map, &robot, length, Vec::new()) {
-            let mut new_dictionary = dictionary.clone();
-            new_dictionary[depth] = step;
-            let (new_robot, book) = walk_dictionary(map, &new_dictionary, robot.clone(), target, &HashMap::new());
-
-            let mut new_book_so_far = book_so_far.clone();
-            new_book_so_far.extend(book);
-
-            if new_robot.position == *target {
-                if check_path(map, &new_book_so_far, &new_dictionary, original_robot, target) {
-                    return Some((new_book_so_far, new_dictionary));
-                }
-            }
-
-            if let Some((rec_book, rec_dictionary)) = find_path(map, &new_dictionary, &new_robot, original_robot, target, depth + 1, &new_book_so_far) {
-                // let mut rec_book = rec_book;
-                // rec_book.extend(book);
-                return Some((rec_book, rec_dictionary));
-            }
-        }
-    }
     return None;
 }
 
-fn encode_path(path: &Vec<Command>) -> Vec<u8> {
+fn encode_path(path: &Vec<Command>) -> Vec<u8> { // TODO: this function has bugs
     let offset = 0;
     let length = path.len();
     let mut encoded = Vec::new();
@@ -683,107 +533,7 @@ fn main() {
 
     context.program[0] = 2;
 
-    let dictionary = vec!(
-        vec!(
-            Command::TurnRight,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::TurnRight,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-        ),
-        vec!(
-            Command::TurnRight,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::TurnRight,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::TurnRight,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-        ),
-        vec!(
-            Command::TurnLeft,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::TurnLeft,
-            Command::MoveForward,
-            Command::MoveForward,
-        ),
-    );
-    let dictionary = vec!(
-        vec!(
-            Command::TurnRight,
-            Command::MoveForward,
-        ),
-        vec!(
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::TurnLeft,
-        ),
-        vec!(
-            Command::TurnLeft,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::TurnRight,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::TurnLeft,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::MoveForward,
-            Command::TurnLeft,
-            Command::MoveForward,
-            Command::MoveForward,
-        )
-    );
-
-    // dbg!(next_steps(&map, &robot.unwrap(), 2, Vec::new()));
-    // dbg!(next_steps(&map, &robot.unwrap(), 4, Vec::new()).len());
-    // return;
-    // let dictionary = vec!(Vec::new(), Vec::new(), Vec::new());
-    // dbg!(walk_dictionary(&map, &dictionary, robot.unwrap(), &Position { x: 0, y: 2 }, &HashMap::new()));
-    // return;
-    let dictionary = vec!(Vec::new(), Vec::new(), Vec::new());
     let robot = robot.unwrap();
-    dbg!(find_path(&map, &dictionary, &robot, &robot, &Position { x: 12, y: 30 }, 0, &Vec::new()));
+    dbg!(&robot);
+    find_paths(&map, &robot, &Position { x: 12, y: 30 }); // TODO: don't hard-code target
 }
