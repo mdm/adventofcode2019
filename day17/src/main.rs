@@ -311,7 +311,7 @@ fn find_paths(
     map: &HashMap::<Position, MapTile>,
     robot: &Robot,
     target: &Position,
-) -> Option<Vec<Vec<Command>>> {
+) -> Vec<Command> {
     // BFS
 
     let target_steps: u32 = map.values().map(|tile| match tile {
@@ -320,65 +320,49 @@ fn find_paths(
         _ => 0,
     }).sum();
 
-    let mut queue = VecDeque::new();
-    let mut seen = HashSet::new();
-    queue.push_back((robot.clone(), vec!()));
-    seen.insert(robot.position.clone());
-    let mut path_id = 0;
+    let mut robot = robot.clone();
+    let mut path = vec!();
 
-    while let Some(current) = queue.pop_front() {
-        // dbg!(&current);
-        if current.0.position == *target {
-            let steps: u32 = current.1.iter().map(|command| match command {
-                Command::MoveForward => 1,
-                _ => 0,
-            }).sum();
-            dbg!(steps, target_steps);
-            if steps == target_steps {
-                dbg!(path_id, encode_path(&current.1), &current.1);
-                path_id += 1;
-            }
-        }
-
-        let mut new_robot = current.0.clone();
+    while robot.position != *target {
+        let mut new_robot = robot.clone();
         new_robot.move_forward(false);
-        // if (map.get(&new_robot.position) == Some(&MapTile::Scaffold) && !seen.contains(&new_robot.position))
         if map.get(&new_robot.position) == Some(&MapTile::Scaffold)
         || map.get(&new_robot.position) == Some(&MapTile::Intersection) {
-            let mut path_so_far = current.1.clone();
-            path_so_far.push(Command::MoveForward);
-            seen.insert(new_robot.position.clone());
-            queue.push_back((new_robot, path_so_far));
+            path.push(Command::MoveForward);
+            robot = new_robot;
+            continue;
         }
 
-        let mut new_robot = current.0.clone();
+        let mut new_robot = robot.clone();
         new_robot.turn_left();
         new_robot.move_forward(false);
-        // if (map.get(&new_robot.position) == Some(&MapTile::Scaffold) && !seen.contains(&new_robot.position))
         if map.get(&new_robot.position) == Some(&MapTile::Scaffold)
         || map.get(&new_robot.position) == Some(&MapTile::Intersection) {
-            let mut path_so_far = current.1.clone();
-            path_so_far.push(Command::TurnLeft);
-            path_so_far.push(Command::MoveForward);
-            seen.insert(new_robot.position.clone());
-            queue.push_back((new_robot, path_so_far));
+            path.push(Command::TurnLeft);
+            path.push(Command::MoveForward);
+            robot = new_robot;
+            continue;
         }
 
-        let mut new_robot = current.0.clone();
+        let mut new_robot = robot.clone();
         new_robot.turn_right();
         new_robot.move_forward(false);
-        // if (map.get(&new_robot.position) == Some(&MapTile::Scaffold) && !seen.contains(&new_robot.position))
         if map.get(&new_robot.position) == Some(&MapTile::Scaffold)
         || map.get(&new_robot.position) == Some(&MapTile::Intersection) {
-            let mut path_so_far = current.1.clone();
-            path_so_far.push(Command::TurnRight);
-            path_so_far.push(Command::MoveForward);
-            seen.insert(new_robot.position.clone());
-            queue.push_back((new_robot, path_so_far));
+            path.push(Command::TurnRight);
+            path.push(Command::MoveForward);
+            robot = new_robot;
+            continue;
         }
     }
 
-    return None;
+    let steps: u32 = path.iter().map(|command| match command {
+        Command::MoveForward => 1,
+        _ => 0,
+    }).sum();
+    dbg!(steps, target_steps);
+
+    return path;
 }
 
 fn encode_path(path: &Vec<Command>) -> Vec<u8> { // TODO: this function has bugs
@@ -470,7 +454,7 @@ fn main() {
 //         let ascii_code = match output {
 //             '#' => 35,
 //             '.' => 46,
-//             '\n' => 10,
+//             10 => 10,
 //             '^' => 94,
 //             _ => 46,
 //         };
@@ -523,6 +507,17 @@ fn main() {
     println!("{}", alignment_sum);
     println!("{}", scaffold_length);
 
+    let robot = robot.unwrap();
+    dbg!(&robot);
+    let path = find_paths(&map, &robot, &Position { x: 12, y: 30 }); // TODO: don't hard-code target
+    let encoded_path = encode_path(&path);
+    println!("{}", encoded_path.iter().map(|code| if *code < 44 {
+        code.to_string()
+    } else {
+        (*code as char).to_string()
+    }
+    ).collect::<Vec<_>>().join(""));
+
     let mut context = Context {
         program: program.clone(),
         pc: 0,
@@ -532,8 +527,29 @@ fn main() {
     };
 
     context.program[0] = 2;
+    let program = vec![
+        65, 44, 65, 44, 66, 44, 67, 44, 67, 44, 65, 44, 67, 44, 66, 44, 67, 44, 66, 10,
+        76, 44, 52, 44, 76, 44, 52, 44, 76, 44, 54, 44, 82, 44, 49, 48, 44, 76, 44, 54, 10,
+        76, 44, 49, 50, 44, 76, 44, 54, 44, 82, 44, 49, 48, 44, 76, 44, 54, 10,
+        82, 44, 56, 44, 82, 44, 49, 48, 44, 76, 44, 54, 10,
+        110, 10
+    ]; // TODO: calculate program from path
+    for char in program {
+        context.inputs.push_back(char);
+    }
 
-    let robot = robot.unwrap();
-    dbg!(&robot);
-    find_paths(&map, &robot, &Position { x: 12, y: 30 }); // TODO: don't hard-code target
+    loop {
+        match run(&mut context) {
+            Some(output) => {
+                if output < 127 {
+                    print!("{}", output as u8 as char);
+                } else {
+                    println!("{}", output)
+                }
+            }
+            None => {
+                break;
+            }
+        };
+    }
 }
